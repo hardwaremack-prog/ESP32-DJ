@@ -1,0 +1,16 @@
+{
+  "name": "ESP32 DJ for Heltec WiFi LoRa 32 V3",
+  "version": "1.0.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "firmware/v3/bootloader.bin", "offset": 0 },
+        { "path": "firmware/v3/partitions.bin", "offset": 32768 },
+        { "path": "firmware/v3/boot_app0.bin", "offset": 57344 },
+        { "path": "firmware/v3/esp32dj.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}

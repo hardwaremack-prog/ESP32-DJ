@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0a0c11">
+<title>ESP32 DJ</title>
+<link rel="icon" href="data:,">
+<style>
+:root{
+  --bg:#0a0c11; --panel:#12161e; --panel2:#171c26; --line:#242b38; --btn:#1c2230; --btn2:#252d3d;
+  --text:#e7ebf3; --dim:#8a93a6; --faint:#5a6375;
+  --a:#22d3ee; --b:#f472b6; --m:#a78bfa; --go:#34d399; --warn:#fbbf24; --bad:#f87171;
+  --r:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.3 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overscroll-behavior:none}
+body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;background:var(--btn);border:1px solid var(--line);border-radius:10px;padding:8px 10px;cursor:pointer;touch-action:manipulation;transition:background .08s,box-shadow .08s,border-color .08s}
+button:active{background:var(--btn2)}
+button.on{border-color:var(--acc,var(--m));box-shadow:0 0 0 1px var(--acc,var(--m)) inset,0 0 14px -4px var(--acc,var(--m));color:#fff}
+input,select{font:inherit;color:var(--text);background:#0e1219;border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+/* top bar */
+.top{display:flex;align-items:center;gap:8px;padding:8px 10px;position:sticky;top:0;z-index:5;background:linear-gradient(var(--bg),rgba(10,12,17,.92))}
+.logo{font-weight:800;letter-spacing:.04em;font-size:16px;display:flex;align-items:center;gap:8px;margin-right:auto}
+.logo i{width:10px;height:10px;border-radius:50%;background:var(--bad);box-shadow:0 0 10px var(--bad)}
+.logo i.ok{background:var(--go);box-shadow:0 0 10px var(--go)}
+.top .stat{color:var(--dim);font-size:12px}
+.top button{padding:7px 10px;font-size:13px;white-space:nowrap}
+@media (max-width:620px){.top{gap:5px;padding:8px 8px}.top button{padding:6px 7px;font-size:12px}.top .stat{display:none}.logo{font-size:14px}}
+
+/* layout */
+.wrap{padding:0 10px 14px;display:grid;gap:10px}
+.strip{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;position:relative;height:118px}
+.strip canvas{width:100%;height:100%;display:block}
+.main{display:grid;gap:10px;grid-template-columns:1fr minmax(250px,300px) 1fr}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px}
+@media (max-width:860px){
+  .main{grid-template-columns:1fr 1fr}
+  .mixer{grid-column:1 / span 2;order:3}
+}
+@media (max-width:620px){
+  .main{grid-template-columns:1fr}
+  .mixer{grid-column:auto;order:0}
+  .deck.b{order:1}
+  .strip{height:96px}
+}
+
+/* deck */
+.deck{--acc:var(--a);display:grid;gap:8px}
+.deck.b{--acc:var(--b)}
+.dh{display:flex;gap:10px;align-items:flex-start}
+.badge{flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-weight:800;background:color-mix(in srgb,var(--acc) 18%,transparent);color:var(--acc);border:1px solid color-mix(in srgb,var(--acc) 45%,transparent)}
+.ti{min-width:0;flex:1}
+.ti b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:15px}
+.ti span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dim);font-size:12px}
+.bpmbox{text-align:right;flex:none}
+.bpmbox b{font-size:22px;display:block;line-height:1}
+.bpmbox span{font-size:11px;color:var(--dim)}
+.ov{height:44px;border-radius:9px;overflow:hidden;background:#0d1017;border:1px solid var(--line);touch-action:none;cursor:pointer}
+.ov canvas{width:100%;height:100%;display:block}
+.times{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-top:-4px}
+.mid{display:grid;grid-template-columns:1fr 46px;gap:8px;align-items:stretch}
+.jogwrap{position:relative;aspect-ratio:1;max-height:250px;justify-self:center;width:100%;max-width:250px}
+.jog{width:100%;height:100%;touch-action:none;display:block}
+.pitchcol{display:flex;flex-direction:column;gap:6px;align-items:center}
+.pitchcol .fader{flex:1;min-height:150px}
+.pitchcol button{padding:5px 0;width:100%;font-size:11px}
+.pv{font-size:11px;color:var(--dim)}
+.row{display:grid;gap:6px}
+.r3{grid-template-columns:repeat(3,1fr)}
+.r4{grid-template-columns:repeat(4,1fr)}
+.r6{grid-template-columns:repeat(6,1fr)}
+.r7{grid-template-columns:repeat(7,1fr)}
+.big{padding:12px 0;font-weight:700;font-size:15px}
+.play.on{--acc:var(--go)}
+.cue.on{--acc:var(--warn)}
+.hc{padding:9px 0;font-weight:700}
+.hc.set{background:color-mix(in srgb,var(--c) 30%,var(--btn));border-color:var(--c);color:#fff}
+.small{font-size:12px;padding:7px 0}
+.lbl{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:2px 0 -2px}
+.loopsz{font-size:12px;padding:7px 0}
+
+/* mixer */
+.mixer{--acc:var(--m);display:grid;gap:8px;align-content:start}
+.chs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ch{display:grid;gap:4px;justify-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:8px 4px}
+.ch.a{--acc:var(--a)} .ch.b{--acc:var(--b)}
+.knob{width:52px;display:grid;justify-items:center;touch-action:none;cursor:ns-resize}
+.knob svg{width:46px;height:46px;display:block}
+.knob .kl{font-size:10px;color:var(--dim);letter-spacing:.06em;margin-top:-4px}
+.volrow{display:flex;gap:6px;align-items:stretch;height:150px}
+.vu{width:8px;border-radius:4px;background:#0c0f15;border:1px solid var(--line);position:relative;overflow:hidden}
+.vu i{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(to top,var(--go) 0 65%,var(--warn) 65% 85%,var(--bad) 85%);height:0}
+.fader{position:relative;touch-action:none;cursor:pointer}
+.fader.v{width:34px;height:100%}
+.fader.h{height:40px;width:100%}
+.fader .tr{position:absolute;background:#0b0e14;border:1px solid var(--line);border-radius:6px}
+.fader.v .tr{left:50%;top:6px;bottom:6px;width:8px;transform:translateX(-50%)}
+.fader.h .tr{top:50%;left:6px;right:6px;height:8px;transform:translateY(-50%)}
+.fader .cap{position:absolute;border-radius:7px;background:linear-gradient(#3a4458,#262e3d);border:1px solid #4a5568;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+.fader.v .cap{left:0;right:0;height:22px;margin-top:-11px}
+.fader.h .cap{top:0;bottom:0;width:30px;margin-left:-15px}
+.fader .cap::after{content:"";position:absolute;background:var(--acc);border-radius:2px;opacity:.9}
+.fader.v .cap::after{left:5px;right:5px;top:50%;height:2px;margin-top:-1px}
+.fader.h .cap::after{top:5px;bottom:5px;left:50%;width:2px;margin-left:-1px}
+.fader .ctr{position:absolute;background:var(--faint)}
+.fader.v .ctr{left:4px;right:4px;top:50%;height:1px}
+.fader.h .ctr{top:4px;bottom:4px;left:50%;width:1px}
+.pfl{padding:6px 12px;font-size:12px}
+.master{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;justify-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:8px 4px}
+.xf{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:6px 10px}
+.xf .xl{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);font-weight:700}
+.xf .xl b:first-child{color:var(--a)} .xf .xl b:last-child{color:var(--b)}
+
+/* fx + pads */
+.lower{display:grid;gap:10px;grid-template-columns:1.2fr 1fr}
+@media (max-width:860px){.lower{grid-template-columns:1fr}}
+.fx{--acc:var(--m);display:grid;gap:8px}
+.fxrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.fxrow button{flex:1;min-width:64px;font-size:12px}
+.fxbody{display:flex;gap:10px;align-items:center}
+.fxbody .grow{flex:1;display:grid;gap:6px}
+.fxon{padding:14px 18px;font-weight:800}
+.pads{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.pad{aspect-ratio:1.6;font-size:12px;font-weight:700;background:linear-gradient(145deg,#1e2433,#161b26);display:grid;place-items:center}
+.pad.hit{background:var(--m);color:#111;box-shadow:0 0 18px var(--m)}
+.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.ph h3{margin:0;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+
+/* sheets */
+.sheet{position:fixed;inset:0;z-index:20;display:none;background:rgba(0,0,0,.55);backdrop-filter:blur(3px)}
+.sheet.open{display:block}
+.sheet .box{position:absolute;left:0;right:0;bottom:0;max-height:88vh;background:var(--panel);border-top:1px solid var(--line);border-radius:18px 18px 0 0;display:flex;flex-direction:column;padding:12px 12px calc(12px + env(safe-area-inset-bottom))}
+@media (min-width:900px){.sheet .box{left:50%;transform:translateX(-50%);width:880px;bottom:16px;border-radius:18px;border:1px solid var(--line)}}
+.sh{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.sh h2{margin:0 auto 0 0;font-size:17px}
+.tabs{display:flex;gap:6px;margin-bottom:8px}
+.tabs button{flex:1;font-size:13px}
+.list{overflow:auto;flex:1;min-height:120px;border:1px solid var(--line);border-radius:12px;background:#0e1219;-webkit-overflow-scrolling:touch}
+.trk{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #1a202b}
+.trk .tn{flex:1;min-width:0}
+.trk .tn b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trk .tn span{display:block;font-size:11px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trk .tb{font-size:12px;color:var(--dim);width:48px;text-align:right}
+.trk button{padding:6px 10px;font-size:12px;font-weight:700}
+.trk .la{color:var(--a)} .trk .lb{color:var(--b)}
+.empty{padding:24px;text-align:center;color:var(--dim)}
+.form{overflow:auto;display:grid;gap:12px;padding-bottom:8px}
+.form fieldset{border:1px solid var(--line);border-radius:12px;padding:10px;display:grid;gap:8px;grid-template-columns:1fr 1fr}
+.form legend{color:var(--dim);font-size:12px;letter-spacing:.08em;text-transform:uppercase;padding:0 6px}
+.form label{display:grid;gap:4px;font-size:12px;color:var(--dim)}
+.form label.full{grid-column:1 / -1}
+.form .chk{display:flex;align-items:center;gap:8px;grid-column:1 / -1;color:var(--text);font-size:13px}
+.form .chk input{width:auto}
+.form .hint{grid-column:1 / -1;font-size:12px;color:var(--faint)}
+.prog{height:6px;background:#0e1219;border-radius:3px;overflow:hidden;border:1px solid var(--line)}
+.prog i{display:block;height:100%;width:0;background:var(--m)}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#202839;border:1px solid var(--line);padding:10px 14px;border-radius:12px;z-index:40;display:none;max-width:90vw}
+.toast.show{display:block}
+.offline{position:fixed;inset:auto 0 0 0;z-index:30;background:#3b1d22;color:#fecaca;text-align:center;padding:8px;font-size:13px;display:none}
+.offline.show{display:block}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="logo"><i id="dot"></i>ESP32&nbsp;DJ</div>
+  <span class="stat num" id="cpu"></span>
+  <button id="bQuant" title="Snap cues and loops to the beat">Quantize</button>
+  <button id="bAuto" title="Automatic mixing">Auto-DJ</button>
+  <button id="bLib">Library</button>
+  <button id="bSet" aria-label="Settings">⚙</button>
+</div>
+
+<div class="wrap">
+  <div class="strip"><canvas id="beatview"></canvas></div>
+  <div class="main">
+    <section class="panel deck a" id="deck0"></section>
+    <section class="panel mixer" id="mixer"></section>
+    <section class="panel deck b" id="deck1"></section>
+  </div>
+  <div class="lower">
+    <section class="panel fx" id="fx"></section>
+    <section class="panel" id="padsPanel"></section>
+  </div>
+</div>
+
+<div class="sheet" id="libSheet"><div class="box">
+  <div class="sh"><h2>Library</h2><span class="stat" id="libCount"></span><button id="libClose">Close</button></div>
+  <div class="tabs"><button data-tab="tracks" class="on">Tracks</button><button data-tab="queue">Up next <span id="qn"></span></button><button data-tab="files">Files &amp; upload</button></div>
+  <div id="tabTracks" style="display:flex;flex-direction:column;gap:8px;min-height:0;flex:1">
+    <div style="display:flex;gap:8px"><input id="search" placeholder="Search title, artist, folder…" autocomplete="off"><button id="rescan" title="Rescan SD card">↻</button></div>
+    <div class="list" id="tracks"></div>
+  </div>
+  <div id="tabQueue" style="display:none;flex-direction:column;gap:8px;min-height:0;flex:1">
+    <div class="hint" style="color:var(--dim);font-size:12px">Auto-DJ plays these next (then random tracks). Add with + in Tracks.</div>
+    <div class="list" id="queue"></div>
+    <button id="qclear">Clear queue</button>
+  </div>
+  <div id="tabFiles" style="display:none;flex-direction:column;gap:8px;min-height:0;flex:1">
+    <div style="display:flex;gap:8px;align-items:center"><input id="curDir" value="/music"><button id="dirUp">Up</button><button id="mkdir">New folder</button></div>
+    <div style="display:flex;gap:8px;align-items:center"><button id="upBtn" style="flex:1;--acc:var(--go)" class="on">Upload MP3s here…</button><input type="file" id="upFile" accept=".mp3,audio/mpeg" multiple style="display:none"></div>
+    <div class="prog" id="upProg"><i></i></div><div class="stat" id="upText"></div>
+    <div class="list" id="files"></div>
+  </div>
+</div></div>
+
+<div class="sheet" id="setSheet"><div class="box">
+  <div class="sh"><h2>Settings</h2><button id="setClose">Close</button></div>
+  <div class="form" id="setForm">
+    <div class="stat" id="info"></div>
+    <fieldset><legend>Wi-Fi</legend>
+      <label>Home Wi-Fi name (blank = hotspot only)<input name="ssid"></label>
+      <label>Home Wi-Fi password<input name="pass" type="password"></label>
+      <label>Hotspot password (8+ chars)<input name="apPass"></label>
+      <label>Name on network (.local)<input name="hostname"></label>
+    </fieldset>
+    <fieldset><legend>Audio outputs</legend>
+      <label>Main DAC BCK pin<input name="i2sBck" type="number"></label>
+      <label>Main DAC LRCK/WS pin<input name="i2sWs" type="number"></label>
+      <label>Main DAC DIN pin<input name="i2sDout" type="number"></label>
+      <span></span>
+      <label class="chk"><input type="checkbox" name="dac2"> Second DAC for headphone cueing</label>
+      <label>Headphone DAC BCK<input name="i2s2Bck" type="number"></label>
+      <label>Headphone DAC LRCK/WS<input name="i2s2Ws" type="number"></label>
+      <label>Headphone DAC DIN<input name="i2s2Dout" type="number"></label>
+      <span></span>
+      <label class="chk"><input type="checkbox" name="splitCue"> Split cue on one DAC (left ear = cue, right ear = master)</label>
+    </fieldset>
+    <fieldset><legend>Mixing</legend>
+      <label>Crossfader curve<select name="xfCurve"><option value="0">Smooth</option><option value="1">Sharp (scratch)</option><option value="2">Linear</option></select></label>
+      <label>Pitch range (%)<select name="pitchRange"><option>8</option><option>16</option><option>50</option></select></label>
+      <label>Auto-DJ fade (beats)<input name="fadeBeats" type="number" min="4" max="64"></label>
+      <label>Music folder<input name="musicDir"></label>
+      <label class="chk"><input type="checkbox" id="optWave"> Show waveforms (downloads each loaded track to this device once)</label>
+    </fieldset>
+    <fieldset><legend>SD card (SPI)</legend>
+      <label>CS<input name="sdCs" type="number"></label>
+      <label>SCK<input name="sdSck" type="number"></label>
+      <label>MOSI<input name="sdMosi" type="number"></label>
+      <label>MISO<input name="sdMiso" type="number"></label>
+      <label>Speed (MHz)<input name="sdMHz" type="number" min="1" max="40"></label>
+    </fieldset>
+    <button id="setSave" class="on" style="--acc:var(--go);padding:12px">Save &amp; restart</button>
+    <fieldset><legend>Firmware update</legend>
+      <label class="full">Pick the <b>esp32dj-…-ota.bin</b> file for your board<input type="file" id="otaFile" accept=".bin"></label>
+      <div class="full prog" id="otaProg" style="grid-column:1/-1"><i></i></div>
+      <div class="hint" id="otaText"></div>
+    </fieldset>
+    <button id="reboot">Restart ESP32</button>
+  </div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+<div class="offline" id="offline">Not connected to the ESP32 DJ — reconnecting…</div>
+
+<script>
+"use strict";
+const $=(s,e=document)=>e.querySelector(s), $$=(s,e=document)=>[...e.querySelectorAll(s)];
+const HC_COL=['#f87171','#fbbf24','#34d399','#60a5fa'];
+const S={st:null,t:0,conn:false,lib:{v:-1,t:[],q:[]},libLoaded:-1,disp:[0,0],shift:false,scr:[false,false],info:null,
+  wave:{},waveOn:true,activeDrag:new Set()};
+try{S.waveOn=localStorage.getItem('wave')!=='0'}catch(e){}
+
+/* ---------------- connection ---------------- */
+let ws,buf=new Map(),seq=0;
+function connect(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  ws=new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen=()=>{S.conn=true;ui();};
+  ws.onclose=()=>{S.conn=false;ui();setTimeout(connect,1200)};
+  ws.onerror=()=>{try{ws.close()}catch(e){}};
+  ws.onmessage=e=>{try{onStatus(JSON.parse(e.data))}catch(err){console.warn(err)}};
+}
+function send(cmd,key,now){buf.set(key||('#'+(seq++)),cmd);if(now)flush()}
+function flush(){if(ws&&ws.readyState===1&&buf.size){ws.send([...buf.values()].join('\n'));buf.clear()}}
+setInterval(flush,30);
+function ui(){$('#dot').classList.toggle('ok',S.conn);$('#offline').classList.toggle('show',!S.conn)}
+function toast(t,ms=2600){const e=$('#toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),ms)}
+async function api(path,opt){const r=await fetch(path,opt);const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.statusText);return j}
+
+/* ---------------- widgets ---------------- */
+const controls={};
+function reg(key,w){controls[key]=w;return w}
+
+function Knob(el,{label,min=0,max=2,def=1,bip=false,fmt,onchange}){
+  el.classList.add('knob');
+  el.innerHTML=`<svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="17" fill="#0d1118" stroke="#2a3242" stroke-width="1.5"/><path class="bg" fill="none" stroke="#252c3a" stroke-width="4" stroke-linecap="round"/><path class="fg" fill="none" stroke="var(--acc)" stroke-width="4" stroke-linecap="round"/><line class="ptr" x1="23" y1="23" x2="23" y2="9" stroke="#e7ebf3" stroke-width="2" stroke-linecap="round"/></svg><div class="kl">${label}</div>`;
+  const fg=$('.fg',el),bg=$('.bg',el),ptr=$('.ptr',el),R=19;
+  const arc=(a0,a1)=>{const p=a=>[23+R*Math.sin(a),23-R*Math.cos(a)];const [x0,y0]=p(a0),[x1,y1]=p(a1);const large=Math.abs(a1-a0)>Math.PI?1:0;const sw=a1>a0?1:0;return `M${x0} ${y0}A${R} ${R} 0 ${large} ${sw} ${x1} ${y1}`};
+  const A0=-0.75*Math.PI,A1=0.75*Math.PI;bg.setAttribute('d',arc(A0,A1));
+  const w={v:def,active:false,set(v){w.v=Math.min(max,Math.max(min,v));const t=(w.v-min)/(max-min);const a=A0+t*(A1-A0);
+    const c=bip?0:A0; const s=Math.min(c,a),e=Math.max(c,a);fg.setAttribute('d',Math.abs(e-s)<0.01?'':arc(s,e));
+    ptr.setAttribute('transform',`rotate(${a*180/Math.PI} 23 23)`);el.title=fmt?fmt(w.v):w.v.toFixed(2)}};
+  let y0,v0,lastTap=0;
+  el.addEventListener('pointerdown',e=>{el.setPointerCapture(e.pointerId);w.active=true;y0=e.clientY;v0=w.v;
+    const now=Date.now();if(now-lastTap<300){w.set(def);onchange(w.v)}lastTap=now;});
+  el.addEventListener('pointermove',e=>{if(!w.active)return;const dv=(y0-e.clientY)/160*(max-min);w.set(v0+dv);onchange(w.v)});
+  const up=()=>{w.active=false};el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
+  w.set(def);return w;
+}
+
+function Fader(el,{vertical=true,min=0,max=1,def=0,invert=false,center=false,onchange}){
+  el.classList.add('fader',vertical?'v':'h');
+  el.innerHTML=`<div class="tr"></div>${center?'<div class="ctr"></div>':''}<div class="cap"></div>`;
+  const cap=$('.cap',el);
+  const w={v:def,active:false,set(v){w.v=Math.min(max,Math.max(min,v));let t=(w.v-min)/(max-min);if(invert)t=1-t;
+    if(vertical){cap.style.top=`calc(11px + ${(1-t)} * (100% - 22px))`}else{cap.style.left=`calc(15px + ${t} * (100% - 30px))`}}};
+  const toVal=e=>{const r=el.getBoundingClientRect();let t=vertical?1-(e.clientY-r.top-11)/(r.height-22):(e.clientX-r.left-15)/(r.width-30);
+    t=Math.min(1,Math.max(0,t));if(invert)t=1-t;let v=min+t*(max-min);if(center&&Math.abs(v-(min+max)/2)<(max-min)*0.015)v=(min+max)/2;return v};
+  let grab=null,lastTap=0;
+  el.addEventListener('pointerdown',e=>{el.setPointerCapture(e.pointerId);w.active=true;
+    const now=Date.now();if(now-lastTap<300){w.set(def);onchange(w.v);lastTap=0;return}lastTap=now;
+    const cr=cap.getBoundingClientRect();const onCap=vertical?(e.clientY>=cr.top-6&&e.clientY<=cr.bottom+6):(e.clientX>=cr.left-6&&e.clientX<=cr.right+6);
+    if(onCap){grab={p:vertical?e.clientY:e.clientX,v:w.v}}else{grab=null;w.set(toVal(e));onchange(w.v)}});
+  el.addEventListener('pointermove',e=>{if(!w.active)return;
+    if(grab){const r=el.getBoundingClientRect();const len=(vertical?r.height-22:r.width-30);let d=((vertical?grab.p-e.clientY:e.clientX-grab.p)/len)*(max-min);if(invert)d=-d;
+      let v=grab.v+d;if(center&&Math.abs(v-(min+max)/2)<(max-min)*0.015)v=(min+max)/2;w.set(v)}
+    else w.set(toVal(e));onchange(w.v)});
+  const up=()=>{w.active=false;grab=null};el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
+  w.set(def);return w;
+}
+
+/* EQ knob position <-> gain: 0 = kill, centre = 0 dB, max = +6 dB */
+const eqToGain=p=>p<=1?p*p:1+(p-1);
+const gainToEq=g=>g<=1?Math.sqrt(g):1+(g-1);
+
+/* ---------------- deck UI ---------------- */
+function deckHTML(d){const L=d?'B':'A';return `
+  <div class="dh"><div class="badge">${L}</div><div class="ti"><b class="title">No track</b><span class="artist">Open the Library to load a track</span></div>
+    <div class="bpmbox"><b class="num ebpm">—</b><span class="num pinfo">BPM</span></div></div>
+  <div class="ov"><canvas></canvas></div>
+  <div class="times num mono"><span class="el">0:00.0</span><span class="flags"></span><span class="rem">-0:00.0</span></div>
+  <div class="mid"><div class="jogwrap"><canvas class="jog"></canvas></div>
+    <div class="pitchcol"><button class="rng">±8%</button><div class="pf"></div><span class="pv num">0.0%</span><button class="pr">0</button></div></div>
+  <div class="row r3"><button class="big cue">CUE</button><button class="big play">▶︎ ❚❚</button><button class="big sync">SYNC</button></div>
+  <div class="lbl">Hot cues</div>
+  <div class="row r4">${[0,1,2,3].map(i=>`<button class="hc" data-i="${i}" style="--c:${HC_COL[i]}">${i+1}</button>`).join('')}</div>
+  <div class="lbl">Loop (beats)</div>
+  <div class="row r7">${['¼','½','1','2','4','8','16'].map((t,i)=>`<button class="loopsz" data-b="${[0.25,0.5,1,2,4,8,16][i]}">${t}</button>`).join('')}</div>
+  <div class="row r6"><button class="small lh">÷2</button><button class="small ld">×2</button><button class="small lx">EXIT</button>
+    <button class="small jb" data-j="-4">◀ 4</button><button class="small jb" data-j="4">4 ▶</button><button class="small scr">SCRATCH</button></div>
+  <div class="row r6"><button class="small tap">TAP</button><button class="small bh">BPM÷2</button><button class="small bd">BPM×2</button>
+    <button class="small grid">GRID</button><button class="small brake">BRAKE</button><button class="small ej">EJECT</button></div>`}
+
+const decks=[0,1].map(d=>{
+  const el=$('#deck'+d);el.innerHTML=deckHTML(d);
+  const D={el,d,ov:$('.ov canvas',el),jog:$('.jog',el)};
+  D.pitch=reg(`pitch${d}`,Fader($('.pf',el),{vertical:true,min:-1,max:1,def:0,center:true,onchange:v=>send(`pitch ${d} ${v.toFixed(4)}`,`pitch${d}`)}));
+  $('.pr',el).onclick=()=>{D.pitch.set(0);send(`pitch ${d} 0`,`pitch${d}`)};
+  $('.rng',el).onclick=()=>{const cur=S.st?S.st.d[d].rg:8;const nx=cur<12?16:cur<30?50:8;send(`range ${d} ${nx}`,null,1)};
+  const cue=$('.cue',el);
+  cue.addEventListener('pointerdown',e=>{e.preventDefault();cue.setPointerCapture(e.pointerId);send(`cue ${d} 1`,null,1)});
+  const cueUp=()=>send(`cue ${d} 0`,null,1);cue.addEventListener('pointerup',cueUp);cue.addEventListener('pointercancel',cueUp);
+  $('.play',el).addEventListener('pointerdown',e=>{e.preventDefault();send(`play ${d}`,null,1)});
+  $('.sync',el).onclick=()=>send(`sync ${d}`,null,1);
+  $$('.hc',el).forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();const i=b.dataset.i;
+    if(S.shift){send(`hcdel ${d} ${i}`,null,1);setShift(false)}else send(`hc ${d} ${i}`,null,1)}));
+  $$('.loopsz',el).forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();const s=S.st&&S.st.d[d];
+    const bb=+b.dataset.b;if(s&&s.lo&&Math.abs(s.lb-bb)<1e-3)send(`loopx ${d}`,null,1);else send(`loop ${d} ${bb}`,null,1)}));
+  $('.lh',el).onclick=()=>send(`loophalf ${d}`,null,1);
+  $('.ld',el).onclick=()=>send(`loopdbl ${d}`,null,1);
+  $('.lx',el).onclick=()=>send(`loopx ${d}`,null,1);
+  $$('.jb',el).forEach(b=>b.onclick=()=>send(`jump ${d} ${b.dataset.j}`,null,1));
+  $('.scr',el).onclick=()=>{S.scr[d]=!S.scr[d];$('.scr',el).classList.toggle('on',S.scr[d])};
+  $('.tap',el).addEventListener('pointerdown',e=>{e.preventDefault();send(`tap ${d}`,null,1)});
+  $('.bh',el).onclick=()=>send(`bpmx ${d} 0.5`,null,1);
+  $('.bd',el).onclick=()=>send(`bpmx ${d} 2`,null,1);
+  $('.grid',el).onclick=()=>{send(`grid ${d}`,null,1);setTimeout(()=>send(`save ${d}`,null,1),150);toast('Beat grid set to the current position (saved)')};
+  $('.brake',el).onclick=()=>send(`brake ${d}`,null,1);
+  $('.ej',el).onclick=()=>{if(S.st&&S.st.d[d].pl&&!confirm('Deck is playing. Eject anyway?'))return;send(`eject ${d}`,null,1)};
+  // overview: tap to seek
+  const ovw=$('.ov',el);
+  ovw.addEventListener('pointerdown',e=>{const r=ovw.getBoundingClientRect();const f=(e.clientX-r.left)/r.width;
+    const s=S.st&&S.st.d[d];if(!s||s.st!==2)return;if(s.pl&&!S.shift){toast('Hold SHIFT (top of mixer) to jump while playing',1800);return}
+    send(`seek ${d} ${Math.min(.999,Math.max(0,f)).toFixed(5)}`,null,1);setShift(false)});
+  setupJog(D);
+  return D;
+});
+
+/* jog wheel: nudge while playing, scratch in SCRATCH mode or when paused */
+function setupJog(D){
+  const c=D.jog,d=D.d;let act=false,lastA=0,lastT=0,mode='',vel=0,idle;
+  const ang=e=>{const r=c.getBoundingClientRect();return Math.atan2(e.clientY-(r.top+r.height/2),e.clientX-(r.left+r.width/2))};
+  c.addEventListener('pointerdown',e=>{const s=S.st&&S.st.d[d];if(!s||s.st!==2)return;c.setPointerCapture(e.pointerId);act=true;
+    lastA=ang(e);lastT=performance.now();mode=(S.scr[d]||!s.pl)?'scr':'nudge';
+    if(mode==='scr'){send(`scr ${d} 1`,null,1)}});
+  c.addEventListener('pointermove',e=>{if(!act)return;const a=ang(e),t=performance.now();let da=a-lastA;if(da>Math.PI)da-=2*Math.PI;if(da<-Math.PI)da+=2*Math.PI;
+    const dt=Math.max(8,t-lastT)/1000;lastA=a;lastT=t;
+    const v=(da/dt)/(2*Math.PI/1.8); vel=vel*0.4+v*0.6;
+    if(mode==='scr'){send(`sv ${d} ${vel.toFixed(3)}`,`sv${d}`);D.spin=(D.spin||0)+da}
+    else{send(`jog ${d} ${Math.max(-.5,Math.min(.5,vel*0.12)).toFixed(4)}`,`jog${d}`)}
+    clearTimeout(idle);idle=setTimeout(()=>{vel=0;if(mode==='scr')send(`sv ${d} 0`,`sv${d}`)},70)});
+  const up=()=>{if(!act)return;act=false;clearTimeout(idle);if(mode==='scr'){send(`sv ${d} 0`,`sv${d}`);send(`scr ${d} 0`,null,1)}else send(`jog ${d} 0`,`jog${d}`,1);vel=0};
+  c.addEventListener('pointerup',up);c.addEventListener('pointercancel',up);
+}
+
+/* ---------------- mixer UI ---------------- */
+function mixerHTML(){return `
+  <div class="ph"><h3>Mixer</h3><button class="small" id="shift" style="padding:6px 12px">SHIFT</button></div>
+  <div class="chs">${[0,1].map(d=>`<div class="ch ${d?'b':'a'}">
+     <div data-k="trim${d}"></div><div data-k="hi${d}"></div><div data-k="mid${d}"></div><div data-k="lo${d}"></div><div data-k="flt${d}"></div>
+     <button class="pfl" data-d="${d}" title="Listen in headphones">🎧 CUE</button>
+     <div class="volrow"><div class="vu"><i id="vu${d}"></i></div><div data-k="vol${d}" style="height:100%"></div></div></div>`).join('')}
+  </div>
+  <div class="master"><div data-k="mvol"></div><div data-k="hpmix"></div><div data-k="hpvol"></div><div style="display:grid;justify-items:center;gap:4px"><div class="vu" style="height:46px;width:12px"><i id="vum"></i></div><div class="kl" style="font-size:10px;color:var(--dim)">MASTER</div></div></div>
+  <div class="xf"><div class="xl"><b>A</b><span>CROSSFADER</span><b>B</b></div><div data-k="xf"></div></div>`}
+$('#mixer').innerHTML=mixerHTML();
+const K=(k)=>$(`[data-k="${k}"]`);
+for(const d of [0,1]){
+  reg(`trim${d}`,Knob(K(`trim${d}`),{label:'GAIN',min:0,max:2,def:1,fmt:v=>(20*Math.log10(Math.max(v,1e-3))).toFixed(1)+' dB',onchange:v=>send(`trim ${d} ${v.toFixed(3)}`,`trim${d}`)}));
+  for(const [b,n] of [['hi','HI'],['mid','MID'],['lo','LOW']])
+    reg(`${b}${d}`,Knob(K(`${b}${d}`),{label:n,min:0,max:1.6,def:1,fmt:v=>{const g=eqToGain(v);return g<0.01?'kill':(20*Math.log10(g)).toFixed(1)+' dB'},onchange:v=>send(`${b} ${d} ${eqToGain(v).toFixed(3)}`,`${b}${d}`)}));
+  reg(`flt${d}`,Knob(K(`flt${d}`),{label:'FILTER',min:-1,max:1,def:0,bip:true,fmt:v=>Math.abs(v)<.02?'off':(v<0?'low-pass':'high-pass'),onchange:v=>send(`flt ${d} ${(Math.abs(v)<.03?0:v).toFixed(3)}`,`flt${d}`)}));
+  reg(`vol${d}`,Fader(K(`vol${d}`),{vertical:true,min:0,max:1,def:0.8,onchange:v=>send(`vol ${d} ${v.toFixed(3)}`,`vol${d}`)}));
+}
+reg('mvol',Knob(K('mvol'),{label:'MASTER',min:0,max:1.2,def:0.8,onchange:v=>send(`mvol ${v.toFixed(3)}`,'mvol')}));
+reg('hpmix',Knob(K('hpmix'),{label:'CUE/MIX',min:0,max:1,def:0.3,onchange:v=>send(`hpmix ${v.toFixed(3)}`,'hpmix')}));
+reg('hpvol',Knob(K('hpvol'),{label:'PHONES',min:0,max:1.2,def:0.7,onchange:v=>send(`hpvol ${v.toFixed(3)}`,'hpvol')}));
+reg('xf',Fader(K('xf'),{vertical:false,min:0,max:1,def:0.5,center:true,onchange:v=>send(`xf ${v.toFixed(3)}`,'xf')}));
+$$('.pfl').forEach(b=>b.onclick=()=>{const d=+b.dataset.d;const on=!(S.st&&S.st.d[d].pfl);send(`pfl ${d} ${on?1:0}`,null,1)});
+function setShift(v){S.shift=v;$('#shift').classList.toggle('on',v)}
+$('#shift').onclick=()=>setShift(!S.shift);
+
+/* ---------------- FX + pads ---------------- */
+$('#fx').innerHTML=`<div class="ph"><h3>Effects</h3><span class="stat" id="fxdesc"></span></div>
+  <div class="fxrow" id="fxType">${['—','ECHO','FLANGER','CRUSH','GATE'].map((n,i)=>i?`<button data-v="${i}">${n}</button>`:'').join('')}</div>
+  <div class="fxbody"><div class="grow">
+    <div class="fxrow" id="fxTgt"><button data-v="0" style="--acc:var(--a)">DECK A</button><button data-v="2">MASTER</button><button data-v="1" style="--acc:var(--b)">DECK B</button></div>
+    <div class="fxrow" id="fxBeats">${[['¼',.25],['½',.5],['¾',.75],['1',1],['2',2]].map(([n,v])=>`<button data-v="${v}">${n}</button>`).join('')}</div>
+  </div><div data-k="fxa"></div><button class="fxon" id="fxOn">ON</button></div>`;
+reg('fxa',Knob(K('fxa'),{label:'AMOUNT',min:0,max:1,def:0.5,onchange:v=>send(`fxa ${v.toFixed(3)}`,'fxa')}));
+$$('#fxType button').forEach(b=>b.onclick=()=>send(`fx ${b.dataset.v}`,null,1));
+$$('#fxTgt button').forEach(b=>b.onclick=()=>send(`fxt ${b.dataset.v}`,null,1));
+$$('#fxBeats button').forEach(b=>b.onclick=()=>send(`fxb ${b.dataset.v}`,null,1));
+$('#fxOn').addEventListener('pointerdown',e=>{e.preventDefault();send(`fxon ${S.st&&S.st.fx.on?0:1}`,null,1)});
+const PADS=['Air Horn','Siren','Laser','Boom','Riser','Clap','808 Kick','Rewind'];
+$('#padsPanel').innerHTML=`<div class="ph"><h3>Sound pads</h3><div data-k="padvol" style="transform:scale(.8);margin:-12px -6px -14px"></div></div>
+  <div class="pads">${PADS.map((n,i)=>`<button class="pad" data-i="${i}">${n}</button>`).join('')}</div>`;
+reg('padvol',Knob(K('padvol'),{label:'VOL',min:0,max:1.2,def:0.7,onchange:v=>send(`padvol ${v.toFixed(3)}`,'padvol')}));
+$$('.pad').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();send(`pad ${b.dataset.i}`,null,1);b.classList.add('hit');setTimeout(()=>b.classList.remove('hit'),140)}));
+
+/* ---------------- top bar ---------------- */
+$('#bAuto').onclick=()=>{const on=!(S.st&&S.st.adj);send(`adj ${on?1:0}`,null,1);if(on)toast('Auto-DJ on: it mixes tracks from "Up next", then random ones')};
+$('#bQuant').onclick=()=>send(`quant ${S.st&&S.st.qz?0:1}`,null,1);
+
+/* ---------------- status ---------------- */
+const fmtT=(s,tenths=true)=>{if(!isFinite(s)||s<0)s=0;const m=Math.floor(s/60),x=s-m*60;return `${m}:${(tenths?x.toFixed(1):Math.floor(x).toString()).padStart(tenths?4:2,'0')}`};
+function setOn(el,v){el.classList.toggle('on',!!v)}
+function onStatus(s){
+  const prev=S.st;S.st=s;S.t=performance.now();
+  for(const d of [0,1]){
+    const k=s.d[d],D=decks[d],el=D.el;
+    if(!prev||prev.d[d].p!==k.p||prev.d[d].st!==k.st){
+      $('.title',el).textContent=k.st===0?'No track':k.st===1?'Loading…':k.st===3?'Could not read that file':k.ti||k.p.split('/').pop();
+      $('.artist',el).textContent=k.st===2?(k.ar||k.p):k.st===0?'Open the Library to load a track':'';
+      S.disp[d]=k.pos;
+      if(k.st===2&&S.waveOn)loadWave(k.p);
+    }
+    if(Math.abs(S.disp[d]-k.pos)>1.5)S.disp[d]=k.pos;
+    $('.ebpm',el).textContent=k.bpm>0?k.eb.toFixed(1):(k.an?'…':'—');
+    $('.pinfo',el).textContent=k.bpm>0?`${k.pi>=0?'+':''}${k.pi.toFixed(1)}%  ·  ${k.bpm.toFixed(1)}`:(k.an?'analyzing':'BPM');
+    $('.pv',el).textContent=`${k.pi>=0?'+':''}${k.pi.toFixed(2)}%`;
+    $('.rng',el).textContent=`±${k.rg}%`;
+    setOn($('.play',el),k.pl&&!k.cp);setOn($('.cue',el),k.cp||(!k.pl&&k.st===2&&Math.abs(k.pos-k.cue)<0.05));setOn($('.sync',el),k.sy);
+    $$('.hc',el).forEach((b,i)=>b.classList.toggle('set',k.hc[i]>=0));
+    $$('.loopsz',el).forEach(b=>setOn(b,k.lo&&Math.abs(+b.dataset.b-k.lb)<1e-3));
+    setOn($('.lx',el),k.lo);
+    $('.flags',el).textContent=[k.lo?'LOOP':'',k.sy?'SYNC':'',k.end?'END':''].filter(Boolean).join(' · ');
+    for(const [key,v] of [[`pitch${d}`,k.sy?null:k.pf],[`vol${d}`,k.vol],[`trim${d}`,k.tr],[`hi${d}`,gainToEq(k.eqh)],[`mid${d}`,gainToEq(k.eqm)],[`lo${d}`,gainToEq(k.eql)],[`flt${d}`,k.fl]]){
+      const w=controls[key];if(w&&!w.active&&v!=null&&!buf.has(key))w.set(v)}
+    if(k.sy&&!controls[`pitch${d}`].active){const rg=k.rg||8;controls[`pitch${d}`].set(Math.max(-1,Math.min(1,k.pi/rg)))}
+    $('#vu'+d).style.height=Math.min(100,k.vu*100)+'%';
+    setOn($(`.pfl[data-d="${d}"]`),k.pfl);
+  }
+  for(const [key,v] of [['xf',s.xf],['mvol',s.mv],['hpmix',s.hm],['hpvol',s.hv],['padvol',s.pv],['fxa',s.fx.a]]){
+    const w=controls[key];if(w&&!w.active&&!buf.has(key))w.set(v)}
+  $('#vum').style.height=Math.min(100,s.vum*100)+'%';
+  $$('#fxType button').forEach(b=>setOn(b,+b.dataset.v===s.fx.y));
+  $$('#fxTgt button').forEach(b=>setOn(b,+b.dataset.v===s.fx.t));
+  $$('#fxBeats button').forEach(b=>setOn(b,Math.abs(+b.dataset.v-s.fx.b)<1e-3));
+  setOn($('#fxOn'),s.fx.on);
+  $('#fxdesc').textContent=['','echo repeats','jet sweep','lo-fi crunch','rhythmic chop'][s.fx.y]||'';
+  setOn($('#bAuto'),s.adj);setOn($('#bQuant'),s.qz);
+  $('#cpu').textContent=`CPU ${s.cpu}%`+(s.o1?'':' · no DAC');
+  $('#qn').textContent=s.nq?`(${s.nq})`:'';
+  if(s.lv!==S.libLoaded&&$('#libSheet').classList.contains('open'))loadLib();
+}
+
+/* ---------------- waveforms (decoded in the browser) ---------------- */
+const WRATE=150;
+async function loadWave(path){
+  if(S.wave[path])return;S.wave[path]={pending:true};
+  try{
+    const r=await fetch('/api/file?path='+encodeURIComponent(path));if(!r.ok)throw 0;
+    const ab=await r.arrayBuffer();
+    const AC=window.OfflineAudioContext||window.webkitOfflineAudioContext;const ctx=new AC(1,1,11025);
+    const audio=await new Promise((res,rej)=>{const p=ctx.decodeAudioData(ab,res,rej);if(p&&p.then)p.then(res,rej)});
+    const ch=audio.getChannelData(0),sr=audio.sampleRate,hop=Math.round(sr/WRATE),n=Math.floor(ch.length/hop);
+    const pk=new Float32Array(n),lo=new Float32Array(n);let lp=0;const a=1-Math.exp(-2*Math.PI*180/sr);
+    for(let i=0;i<n;i++){let m=0,ml=0;for(let j=i*hop,e=j+hop;j<e;j++){const x=ch[j];lp+=a*(x-lp);const ax=x<0?-x:x,al=lp<0?-lp:lp;if(ax>m)m=ax;if(al>ml)ml=al}pk[i]=m;lo[i]=ml}
+    let mx=0.01;for(let i=0;i<n;i++)if(pk[i]>mx)mx=pk[i];for(let i=0;i<n;i++){pk[i]/=mx;lo[i]/=mx}
+    S.wave[path]={pk,lo,n,dur:n/WRATE};
+  }catch(e){S.wave[path]={fail:true}}
+}
+
+/* ---------------- drawing ---------------- */
+function fit(c){const r=c.getBoundingClientRect(),dp=window.devicePixelRatio||1;const w=Math.round(r.width*dp),h=Math.round(r.height*dp);if(c.width!==w||c.height!==h){c.width=w;c.height=h}return [w,h,dp]}
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const COL=[css('--a'),css('--b')];
+function waveCol(lo,pk,acc){return lo/(pk+1e-4)>0.55?acc:'#c7d2fe'}
+
+function drawOverview(D,k,pos){
+  const c=D.ov,[w,h]=fit(c),g=c.getContext('2d');g.clearRect(0,0,w,h);
+  if(!k||k.st!==2||!k.dur)return;
+  const wv=S.wave[k.p],x=t=>t/k.dur*w;
+  if(wv&&wv.pk){for(let px=0;px<w;px++){const i0=Math.floor(px/w*wv.n),i1=Math.max(i0+1,Math.floor((px+1)/w*wv.n));let m=0,l=0;for(let i=i0;i<i1&&i<wv.n;i++){if(wv.pk[i]>m)m=wv.pk[i];if(wv.lo[i]>l)l=wv.lo[i]}
+      const hh=m*h*0.45;g.fillStyle=x(pos)>px?'#3b4256':waveCol(l,m,COL[D.d]);g.fillRect(px,h/2-hh,1,hh*2)}}
+  else{g.fillStyle='#1b2130';g.fillRect(0,h/2-1,w,2);g.fillStyle='#2a3245';g.fillRect(0,h/2-1,x(pos),2)}
+  if(k.bpm>0){const bar=4*60/k.bpm;g.fillStyle='rgba(255,255,255,.08)';for(let t=k.fb;t<k.dur;t+=bar*8)g.fillRect(x(t),0,1,h)}
+  if(k.lo){g.fillStyle='rgba(52,211,153,.22)';g.fillRect(x(k.ls),0,Math.max(2,x(k.le)-x(k.ls)),h)}
+  g.fillStyle=css('--warn');g.fillRect(x(k.cue)-1,0,2,h*0.3);
+  k.hc.forEach((t,i)=>{if(t>=0){g.fillStyle=HC_COL[i];g.beginPath();g.moveTo(x(t)-5,0);g.lineTo(x(t)+5,0);g.lineTo(x(t),8);g.fill()}});
+  g.fillStyle='#fff';g.fillRect(x(pos)-1,0,2,h);
+}
+
+function drawJog(D,k,pos){
+  const c=D.jog,[w,h,dp]=fit(c),g=c.getContext('2d'),cx=w/2,cy=h/2,R=Math.min(w,h)/2-2*dp;g.clearRect(0,0,w,h);
+  const acc=COL[D.d],ready=k&&k.st===2;
+  const grd=g.createRadialGradient(cx,cy,R*0.2,cx,cy,R);grd.addColorStop(0,'#1a2030');grd.addColorStop(1,'#0c0f16');
+  g.fillStyle=grd;g.beginPath();g.arc(cx,cy,R,0,7);g.fill();
+  g.strokeStyle='#2a3242';g.lineWidth=2*dp;g.beginPath();g.arc(cx,cy,R-1*dp,0,7);g.stroke();
+  // grooves
+  g.strokeStyle='rgba(255,255,255,.035)';g.lineWidth=1*dp;for(let r=R*0.42;r<R*0.93;r+=4*dp){g.beginPath();g.arc(cx,cy,r,0,7);g.stroke()}
+  const a=ready?(pos/1.8)*2*Math.PI-Math.PI/2:-Math.PI/2;
+  // progress ring
+  if(ready&&k.dur){g.strokeStyle='#232a38';g.lineWidth=5*dp;g.beginPath();g.arc(cx,cy,R-7*dp,0,7);g.stroke();
+    const rem=k.dur-pos;g.strokeStyle=rem<20&&k.pl&&(performance.now()%600<300)?css('--bad'):acc;g.beginPath();g.arc(cx,cy,R-7*dp,-Math.PI/2,-Math.PI/2+2*Math.PI*Math.min(1,pos/k.dur));g.stroke()}
+  // platter marker
+  g.strokeStyle=ready?'#e7ebf3':'#3a4254';g.lineWidth=4*dp;g.lineCap='round';g.beginPath();
+  g.moveTo(cx+Math.cos(a)*R*0.45,cy+Math.sin(a)*R*0.45);g.lineTo(cx+Math.cos(a)*R*0.86,cy+Math.sin(a)*R*0.86);g.stroke();
+  // centre label with beat pulse
+  let ph=0;if(ready&&k.bpm>0){const b=60/k.bpm;ph=((pos-k.fb)/b)%1;if(ph<0)ph+=1}
+  const pulse=ready&&k.pl&&k.bpm>0?Math.max(0,1-ph*4):0;
+  g.fillStyle='#0d1118';g.beginPath();g.arc(cx,cy,R*0.34,0,7);g.fill();
+  g.globalAlpha=0.18+pulse*0.6;g.fillStyle=acc;g.beginPath();g.arc(cx,cy,R*0.34,0,7);g.fill();g.globalAlpha=1;
+  // 4 beat dots
+  if(ready&&k.bpm>0){const beat=Math.floor((pos-k.fb)/(60/k.bpm));const bi=((beat%4)+4)%4;for(let i=0;i<4;i++){g.fillStyle=i===bi?'#fff':'rgba(255,255,255,.18)';g.beginPath();g.arc(cx+(i-1.5)*9*dp,cy+R*0.17,2.6*dp,0,7);g.fill()}}
+  g.fillStyle='#fff';g.textAlign='center';g.textBaseline='middle';g.font=`700 ${Math.round(R*0.16)}px system-ui`;
+  g.fillText(ready?(k.bpm>0?k.eb.toFixed(1):'—'):(D.d?'B':'A'),cx,cy-R*0.04);
+  if(S.scr[D.d]){g.font=`600 ${Math.round(R*0.08)}px system-ui`;g.fillStyle=acc;g.fillText('SCRATCH',cx,cy-R*0.2)}
+}
+
+function drawBeatView(){
+  const c=$('#beatview'),[w,h,dp]=fit(c),g=c.getContext('2d');g.clearRect(0,0,w,h);
+  const lane=h/2,span=6,pps=w/span,cx=w/2;
+  for(const d of [0,1]){
+    const k=S.st&&S.st.d[d],y0=d*lane,mid=y0+lane/2,acc=COL[d];
+    g.fillStyle=d?'#10131b':'#0e1118';g.fillRect(0,y0,w,lane);
+    if(!k||k.st!==2){g.fillStyle='#2a3242';g.font=`${11*dp}px system-ui`;g.textAlign='left';g.fillText(d?'DECK B':'DECK A',8*dp,mid+4*dp);continue}
+    const pos=S.disp[d],tempo=k.bpm>0?k.eb/k.bpm:1+k.pi/100,sp=tempo||1;
+    const t0=pos-(cx/pps)*sp,t1=pos+(cx/pps)*sp,X=t=>cx+(t-pos)/sp*pps;
+    const wv=S.wave[k.p];
+    if(wv&&wv.pk){g.globalAlpha=1;for(let px=0;px<w;px+=dp){const t=t0+(px/w)*(t1-t0);const i=Math.floor(t*WRATE);if(i<0||i>=wv.n)continue;const m=wv.pk[i],l=wv.lo[i];const hh=m*lane*0.46;g.fillStyle=waveCol(l,m,acc);g.fillRect(px,mid-hh,dp,hh*2)}}
+    else{g.fillStyle='rgba(255,255,255,.05)';g.fillRect(0,mid-1,w,2)}
+    if(k.lo){g.fillStyle='rgba(52,211,153,.18)';g.fillRect(X(k.ls),y0,X(k.le)-X(k.ls),lane)}
+    if(k.bpm>0){const b=60/k.bpm;let n=Math.ceil((t0-k.fb)/b);for(let t=k.fb+n*b;t<t1;t+=b,n++){const bar=((n%4)+4)%4===0;g.fillStyle=bar?'rgba(255,255,255,.55)':'rgba(255,255,255,.18)';g.fillRect(X(t)-(bar?1:0.5)*dp,y0+(bar?0:lane*0.2),(bar?2:1)*dp,bar?lane:lane*0.6)}}
+    k.hc.forEach((t,i)=>{if(t>=0&&t>t0&&t<t1){g.fillStyle=HC_COL[i];g.fillRect(X(t)-1*dp,y0,2*dp,lane)}});
+    if(k.cue>t0&&k.cue<t1){g.fillStyle=css('--warn');g.fillRect(X(k.cue)-1*dp,y0,2*dp,lane*0.35)}
+    g.fillStyle=acc;g.font=`700 ${11*dp}px system-ui`;g.textAlign='left';g.fillText(d?'B':'A',6*dp,y0+14*dp);
+  }
+  g.fillStyle='#fff';g.fillRect(cx-1*dp,0,2*dp,h);
+  g.fillStyle='#000';g.fillRect(0,lane-0.5*dp,w,1*dp);
+}
+
+let lastF=performance.now();
+function frame(now){
+  const dt=Math.min(0.1,(now-lastF)/1000);lastF=now;
+  if(S.st){for(const d of [0,1]){const k=S.st.d[d];if(k.st!==2){S.disp[d]=0;continue}
+      const est=k.pos+((now-S.t)/1000)*k.sp;S.disp[d]+=dt*k.sp;S.disp[d]+= (est-S.disp[d])*0.12;
+      if(S.disp[d]<0)S.disp[d]=0;
+      const el=decks[d].el;$('.el',el).textContent=fmtT(S.disp[d]);$('.rem',el).textContent='-'+fmtT(k.dur-S.disp[d]);
+      drawOverview(decks[d],k,S.disp[d]);drawJog(decks[d],k,S.disp[d])}
+  }else{for(const D of decks)drawJog(D,null,0)}
+  drawBeatView();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------------- library ---------------- */
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function loadLib(){
+  try{const j=await api('/api/lib');S.lib=j;S.libLoaded=S.st?S.st.lv:j.v;renderTracks();renderQueue()}catch(e){toast('Could not load library: '+e.message)}
+}
+function trackName(p){const f=p.split('/').pop().replace(/\.mp3$/i,'');return f}
+function renderTracks(){
+  const q=$('#search').value.trim().toLowerCase(),list=$('#tracks');
+  const all=S.lib.t||[];$('#libCount').textContent=`${all.length} tracks`;
+  let items=q?all.filter(([p])=>p.toLowerCase().includes(q)):all;
+  items=items.slice().sort((a,b)=>trackName(a[0]).localeCompare(trackName(b[0])));
+  const shown=items.slice(0,400);
+  list.innerHTML=shown.length?shown.map(([p,b],i)=>`<div class="trk" data-p="${esc(p)}"><div class="tn"><b>${esc(trackName(p))}</b><span>${esc(p.substring(0,p.lastIndexOf('/'))||'/')}</span></div>
+    <span class="tb num">${b?b.toFixed(1):''}</span><button class="la" data-a="0">A</button><button class="lb" data-a="1">B</button><button data-a="q" title="Add to Up next">+</button></div>`).join('')+(items.length>400?`<div class="empty">${items.length-400} more — refine the search</div>`:'')
+    :`<div class="empty">${all.length?'No matches':'No MP3s found yet. Use “Files & upload” to add music, or copy MP3s to the SD card.'}</div>`;
+}
+$('#tracks').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const p=b.closest('.trk').dataset.p;const a=b.dataset.a;
+  if(a==='q'){send(`q+ ${p}`,null,1);toast('Added to Up next')}
+  else{const d=+a;if(S.st&&S.st.d[d].pl&&!confirm(`Deck ${d?'B':'A'} is playing. Load anyway?`))return;send(`load ${d} ${p}`,null,1);toast(`Loading on deck ${d?'B':'A'}`,1500)}});
+$('#search').addEventListener('input',renderTracks);
+function renderQueue(){const q=S.lib.q||[];$('#queue').innerHTML=q.length?q.map((p,i)=>`<div class="trk"><div class="tn"><b>${i+1}. ${esc(trackName(p))}</b><span>${esc(p)}</span></div><button data-i="${i}">✕</button></div>`).join(''):'<div class="empty">Nothing queued</div>'}
+$('#queue').addEventListener('click',e=>{const b=e.target.closest('button');if(b){send(`q- ${b.dataset.i}`,null,1);setTimeout(loadLib,250)}});
+$('#qclear').onclick=()=>{send('qc',null,1);setTimeout(loadLib,250)};
+$('#rescan').onclick=()=>{send('rescan',null,1);toast('Rescanning the SD card…');setTimeout(loadLib,2500)};
+$('#bLib').onclick=()=>{$('#libSheet').classList.add('open');loadLib()};
+$('#libClose').onclick=()=>$('#libSheet').classList.remove('open');
+$$('.tabs button').forEach(b=>b.onclick=()=>{$$('.tabs button').forEach(x=>setOn(x,x===b));
+  $('#tabTracks').style.display=b.dataset.tab==='tracks'?'flex':'none';$('#tabQueue').style.display=b.dataset.tab==='queue'?'flex':'none';
+  $('#tabFiles').style.display=b.dataset.tab==='files'?'flex':'none';if(b.dataset.tab==='files')loadDir();if(b.dataset.tab==='queue')loadLib()});
+
+/* files */
+async function loadDir(){
+  const dir=$('#curDir').value||'/';
+  try{const j=await api('/api/ls?dir='+encodeURIComponent(dir));
+    const e=j.e.sort((a,b)=>(b.d||0)-(a.d||0)||a.n.localeCompare(b.n));
+    $('#files').innerHTML=e.length?e.map(x=>`<div class="trk" data-n="${esc(x.n)}" data-d="${x.d?1:0}"><div class="tn"><b>${x.d?'📁 ':''}${esc(x.n)}</b><span>${x.d?'folder':(x.s/1048576).toFixed(1)+' MB'}</span></div>${x.d?'<button data-a="open">Open</button>':''}<button data-a="rm">Delete</button></div>`).join(''):'<div class="empty">Empty folder</div>';
+  }catch(err){$('#files').innerHTML=`<div class="empty">${esc(err.message)}</div>`}
+}
+const joinP=(d,n)=>(d.endsWith('/')?d:d+'/')+n;
+$('#files').addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const row=b.closest('.trk');const p=joinP($('#curDir').value,row.dataset.n);
+  if(b.dataset.a==='open'){$('#curDir').value=p;loadDir()}
+  else if(b.dataset.a==='rm'){if(!confirm(`Delete ${row.dataset.n}?`))return;try{await api('/api/rm?path='+encodeURIComponent(p),{method:'POST'});loadDir()}catch(err){toast(err.message)}}});
+$('#dirUp').onclick=()=>{let d=$('#curDir').value.replace(/\/+$/,'');d=d.substring(0,d.lastIndexOf('/'))||'/';$('#curDir').value=d;loadDir()};
+$('#curDir').addEventListener('change',loadDir);
+$('#mkdir').onclick=async()=>{const n=prompt('Folder name');if(!n)return;try{await api('/api/mkdir?path='+encodeURIComponent(joinP($('#curDir').value,n.replace(/[\/\\]/g,'_'))),{method:'POST'});loadDir()}catch(err){toast(err.message)}};
+$('#upBtn').onclick=()=>$('#upFile').click();
+$('#upFile').onchange=async()=>{
+  const files=[...$('#upFile').files];if(!files.length)return;const dir=$('#curDir').value||'/music';
+  const bar=$('#upProg i'),txt=$('#upText');let total=files.reduce((a,f)=>a+f.size,0),done=0;
+  for(const [i,f] of files.entries()){
+    txt.textContent=`Uploading ${i+1}/${files.length}: ${f.name}`;
+    try{await new Promise((res,rej)=>{const x=new XMLHttpRequest();x.open('POST','/api/upload?path='+encodeURIComponent(joinP(dir,f.name)));
+      x.upload.onprogress=e=>{bar.style.width=((done+e.loaded)/total*100).toFixed(1)+'%'};
+      x.onload=()=>x.status<300?res():rej(new Error(x.responseText||x.status));x.onerror=()=>rej(new Error('network error'));x.send(f)});
+    }catch(err){toast(`${f.name}: ${err.message}`);}
+    done+=f.size;
+  }
+  bar.style.width='100%';txt.textContent=`Uploaded ${files.length} file(s).`;$('#upFile').value='';loadDir();setTimeout(loadLib,1500);
+};
+
+/* ---------------- settings ---------------- */
+$('#bSet').onclick=async()=>{$('#setSheet').classList.add('open');
+  try{const [s,i]=await Promise.all([api('/api/settings'),api('/api/info')]);S.info=i;
+    for(const el of $$('#setForm [name]')){const v=s[el.name];if(v===undefined)continue;if(el.type==='checkbox')el.checked=!!v;else el.value=v}
+    $('#optWave').checked=S.waveOn;
+    $('#info').innerHTML=`<b>${esc(i.board)}</b> · firmware ${esc(i.version)} · ${i.mode==='wifi'?'on Wi-Fi':'hotspot'} <b>${esc(i.ssid)}</b> at ${esc(i.ip)}<br>Memory free ${i.heap} KB${i.psram?` · PSRAM ${i.psram} KB`:''} · SD ${i.sdOk?`${i.sdUsed} / ${i.sdTotal} MB used`:'<span style="color:var(--bad)">not found</span>'} · ${i.tracks} tracks`;
+  }catch(e){$('#info').textContent='Could not read settings: '+e.message}};
+$('#setClose').onclick=()=>$('#setSheet').classList.remove('open');
+$('#optWave').onchange=e=>{S.waveOn=e.target.checked;try{localStorage.setItem('wave',S.waveOn?'1':'0')}catch(_){}};
+$('#setSave').onclick=async()=>{
+  const p=new URLSearchParams();for(const el of $$('#setForm [name]'))p.set(el.name,el.type==='checkbox'?(el.checked?'1':'0'):el.value);
+  try{await api('/api/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()});toast('Saved — restarting. If you changed Wi-Fi, reconnect to the new network.',6000)}catch(e){toast('Save failed: '+e.message)}};
+$('#reboot').onclick=async()=>{if(confirm('Restart the ESP32?')){try{await api('/api/reboot',{method:'POST'})}catch(e){}toast('Restarting…')}};
+$('#otaFile').onchange=()=>{const f=$('#otaFile').files[0];if(!f)return;
+  if(!confirm(`Install ${f.name} (${(f.size/1024).toFixed(0)} KB)? Music stops while it updates.`))return;
+  const x=new XMLHttpRequest(),bar=$('#otaProg i');x.open('POST','/api/ota');
+  x.upload.onprogress=e=>{bar.style.width=(e.loaded/e.total*100).toFixed(1)+'%';$('#otaText').textContent=`Uploading… ${(e.loaded/e.total*100).toFixed(0)}%`};
+  x.onload=()=>{$('#otaText').textContent=x.status<300?'Done! Restarting with the new firmware…':'Failed: '+x.responseText};
+  x.onerror=()=>{$('#otaText').textContent='Upload failed'};x.send(f)};
+
+/* keyboard shortcuts (PC) */
+const KEYS={q:'cue 0',w:'play 0',e:'sync 0',o:'cue 1',p:'play 1','[':'sync 1',1:'hc 0 0',2:'hc 0 1',3:'hc 0 2',4:'hc 0 3',7:'hc 1 0',8:'hc 1 1',9:'hc 1 2',0:'hc 1 3'};
+addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'||e.repeat)return;const c=KEYS[e.key];if(!c)return;e.preventDefault();
+  if(c.startsWith('cue'))send(c+' 1',null,1);else send(c,null,1)});
+addEventListener('keyup',e=>{const c=KEYS[e.key];if(c&&c.startsWith('cue'))send(c+' 0',null,1)});
+
+connect();ui();
+</script>
+</body>
+</html>

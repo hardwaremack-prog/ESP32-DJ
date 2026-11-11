@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 DJ — Web Flasher</title>
+<link rel="icon" href="data:,">
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+:root{--bg:#0a0c11;--panel:#12161e;--line:#242b38;--text:#e7ebf3;--dim:#8a93a6;--a:#22d3ee;--b:#f472b6;--m:#a78bfa;--go:#34d399;--warn:#fbbf24}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:920px;margin:0 auto;padding:28px 18px 60px}
+h1{font-size:34px;margin:0 0 4px;letter-spacing:-.01em}
+h1 span{background:linear-gradient(90deg,var(--a),var(--b));-webkit-background-clip:text;background-clip:text;color:transparent}
+h2{font-size:18px;margin:34px 0 10px}
+p.lead{color:var(--dim);margin:0 0 24px;font-size:16px}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:640px){.cards{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px}
+.card h3{margin:0 0 4px;font-size:17px}
+.card p{margin:0 0 14px;color:var(--dim);font-size:14px}
+esp-web-install-button button[slot=activate]{font:inherit;font-weight:700;color:#0a0c11;background:var(--go);border:0;border-radius:10px;padding:11px 18px;cursor:pointer}
+.warn{background:#2a2110;border:1px solid #5b4514;color:#fde68a;border-radius:12px;padding:12px 14px;font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+code{background:#1a2030;border-radius:6px;padding:1px 6px;font-size:13px}
+ol li{margin:6px 0}
+.dim{color:var(--dim)}
+</style>
+</head>
+<body>
+<main>
+  <h1><span>ESP32 DJ</span></h1>
+  <p class="lead">Two-deck MP3 DJ mixer for the Heltec WiFi LoRa 32 V3 and V4. You control it from your phone's browser and it plays through an I2S DAC.</p>
+
+  <div class="warn" id="nows" hidden>This browser can't flash boards. Open this page in <b>Chrome</b> or <b>Edge</b> on a computer.</div>
+
+  <h2>1 · Flash your board</h2>
+  <div class="cards">
+    <div class="card"><h3>Heltec V3</h3><p>ESP32-S3, 8 MB flash, no PSRAM. Shorter scratch/echo buffers.</p>
+      <esp-web-install-button manifest="manifest-v3.json"><button slot="activate">Install on V3</button></esp-web-install-button></div>
+    <div class="card"><h3>Heltec V4 <span class="dim">(recommended)</span></h3><p>ESP32-S3, 16 MB flash, 2 MB PSRAM. 3-second ring buffers, stereo echo, bigger library.</p>
+      <esp-web-install-button manifest="manifest-v4.json"><button slot="activate">Install on V4</button></esp-web-install-button></div>
+  </div>
+  <p class="dim" style="font-size:14px">Plug the board in with a USB-C data cable, click Install, and pick the serial port. If no port shows up, hold <b>PRG</b>, tap <b>RST</b>, then release PRG. Later updates can be installed over Wi-Fi from Settings → Firmware update.</p>
+
+  <h2>2 · Wire it up</h2>
+  <table>
+    <tr><th>Part</th><th>Part pin</th><th>Heltec pin (default)</th></tr>
+    <tr><td rowspan="6">microSD module (3.3 V SPI)</td><td>3V3 / VCC</td><td>3V3</td></tr>
+    <tr><td>GND</td><td>GND</td></tr>
+    <tr><td>CS</td><td>GPIO 42</td></tr>
+    <tr><td>SCK</td><td>GPIO 41</td></tr>
+    <tr><td>MOSI</td><td>GPIO 40</td></tr>
+    <tr><td>MISO</td><td>GPIO 39</td></tr>
+    <tr><td rowspan="5">PCM5102A DAC (main out)</td><td>VIN</td><td>3V3 (or 5V)</td></tr>
+    <tr><td>GND</td><td>GND</td></tr>
+    <tr><td>BCK</td><td>GPIO 4</td></tr>
+    <tr><td>LCK (LRCK)</td><td>GPIO 5</td></tr>
+    <tr><td>DIN</td><td>GPIO 6</td></tr>
+    <tr><td>PCM5102A extra pins</td><td>SCK, FMT, FLT, DEMP → GND · XSMT → 3V3</td><td>(most purple boards already do this with solder jumpers)</td></tr>
+    <tr><td rowspan="3">2nd PCM5102A (headphones, optional)</td><td>BCK</td><td>GPIO 47</td></tr>
+    <tr><td>LCK</td><td>GPIO 48</td></tr>
+    <tr><td>DIN</td><td>GPIO 33</td></tr>
+    <tr><td>Bluetooth (optional)</td><td>KCX_BT_EMITTER or any 3.5 mm BT transmitter</td><td>Plug into the main DAC's headphone jack</td></tr>
+  </table>
+  <p class="dim" style="font-size:14px">Every pin can be changed in Settings. The ESP32-S3 can't stream Bluetooth audio itself because it has no Classic Bluetooth, so use a small transmitter module.</p>
+
+  <h2>3 · Play</h2>
+  <ol>
+    <li>Format a microSD card as <b>FAT32</b> and copy MP3s into a <code>music</code> folder. You can also upload them later from the browser.</li>
+    <li>Power the board. The OLED shows a hotspot named <code>ESP32-DJ-XXXX</code> (password <code>djmix1234</code>).</li>
+    <li>Join it from your phone and open <code>http://192.168.4.1</code>. On your home Wi-Fi it's <code>http://esp32dj.local</code>.</li>
+    <li>Open <b>Library</b>, load a track on A and one on B, and mix. Turn on <b>Auto-DJ</b> to let it mix for you.</li>
+  </ol>
+  <p class="dim" style="font-size:14px">OLED button: a short press changes the screen (decks / network / system). Hold it to toggle Auto-DJ.</p>
+</main>
+<script>if(!('serial' in navigator))document.getElementById('nows').hidden=false;</script>
+</body>
+</html>
