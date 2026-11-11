@@ -4,7 +4,7 @@ A two-deck MP3 DJ mixer that runs on a **Heltec WiFi LoRa 32 V3 or V4** (ESP32-S
 
 ![ESP32 DJ controller](docs/screenshot.png)
 
-**Flash it:** open `docs/index.html` from GitHub Pages in Chrome or Edge, then click *Install on V3* or *Install on V4*.
+**Flash it:** go to **https://hardwaremack-prog.github.io/ESP32-DJ/** in Chrome or Edge, then click *Install on V3* or *Install on V4*.
 
 ## Features
 
